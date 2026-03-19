@@ -7,8 +7,8 @@ class ReviewTask {
   String title;
   bool isLearned;
   DateTime? learnedAt;
-  int currentStageIndex; // -1 = chưa học, 0..4 = đang ở mốc, 5 = hoàn thành tất cả mốc
-  bool isCompleted; // true khi đã ôn xong mốc 30d
+  int currentStageIndex;
+  bool isCompleted;
 
   ReviewTask({
     required this.id,
@@ -19,10 +19,32 @@ class ReviewTask {
     this.isCompleted = false,
   });
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'isLearned': isLearned,
+        'learnedAt': learnedAt?.millisecondsSinceEpoch,
+        'currentStageIndex': currentStageIndex,
+        'isCompleted': isCompleted,
+      };
+
+  static ReviewTask fromJson(Map<String, dynamic> json) => ReviewTask(
+        id: json['id'] as String,
+        title: json['title'] as String,
+        isLearned: json['isLearned'] as bool? ?? false,
+        learnedAt: json['learnedAt'] != null
+            ? DateTime.fromMillisecondsSinceEpoch(json['learnedAt'] as int)
+            : null,
+        currentStageIndex: json['currentStageIndex'] as int? ?? -1,
+        isCompleted: json['isCompleted'] as bool? ?? false,
+      );
+
   int? get currentStepDay {
     if (!isLearned) return null;
     if (isCompleted) return null;
-    if (currentStageIndex < 0 || currentStageIndex >= kReviewSteps.length) return null;
+    if (currentStageIndex < 0 || currentStageIndex >= kReviewSteps.length) {
+      return null;
+    }
     return kReviewSteps[currentStageIndex];
   }
 
@@ -32,7 +54,7 @@ class ReviewTask {
   }
 
   bool get isDueToday {
-    if (isCompleted) return false; // đã hoàn thành → không còn due
+    if (isCompleted) return false;
     final next = nextReviewDate;
     if (next == null) return false;
     final now = DateTime.now();
@@ -72,13 +94,11 @@ class ReviewTask {
     currentStageIndex = -1;
   }
 
-  // Advance lên mốc tiếp theo; nếu đang ở mốc cuối (30d) thì mark completed
   void advanceStage() {
     if (isCompleted) return;
     if (currentStageIndex >= kReviewSteps.length - 1) {
-      // Đã ôn xong mốc 30d → hoàn thành
       isCompleted = true;
-      currentStageIndex = kReviewSteps.length; // 5 = sentinel "done"
+      currentStageIndex = kReviewSteps.length;
     } else {
       currentStageIndex++;
     }
