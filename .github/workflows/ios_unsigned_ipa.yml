@@ -19,7 +19,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
+          channel: "stable"
           cache: true
 
       - name: Cache pub dependencies
@@ -33,17 +33,9 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      # Analyze — chỉ warning, không block build
+      # Analyze — info only, never block build
       - name: Flutter analyze
-        run: flutter analyze --no-pub
-        continue-on-error: true
-
-      # Tạo ios/ nếu chưa có (repo thiếu platform folder)
-      - name: Generate iOS platform files if missing
-        run: |
-          if [ ! -f ios/Podfile ]; then
-            flutter create --platforms=ios .
-          fi
+        run: flutter analyze --no-pub || true
 
       - name: Cache CocoaPods
         uses: actions/cache@v4
@@ -53,11 +45,16 @@ jobs:
           restore-keys: |
             pods-${{ runner.os }}-
 
+      # CocoaPods — chỉ chạy nếu có Podfile
       - name: CocoaPods install
-        working-directory: ios
-        run: pod install --repo-update
+        run: |
+          if [ -f ios/Podfile ]; then
+            cd ios && pod install --repo-update
+          else
+            echo "No Podfile found, skipping pod install"
+          fi
 
-      # Unsigned build — KHÔNG cài được lên iPhone không có signing
+      # Unsigned build
       - name: Flutter build iOS (no codesign)
         run: |
           flutter build ios --release --no-codesign 2>&1 | tee build_ios.log
@@ -78,6 +75,7 @@ jobs:
 
       - name: Upload unsigned IPA artifact
         uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: SpacedRep-iOS-unsigned
           path: SpacedRep_unsigned.ipa
