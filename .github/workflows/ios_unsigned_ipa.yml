@@ -1,0 +1,105 @@
+name: iOS Unsigned Build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build-ios-unsigned:
+    name: Build iOS (unsigned artifact)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Cache pub dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            pub-${{ runner.os }}-
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      # Analyze — chỉ warning, không block build
+      - name: Flutter analyze
+        run: flutter analyze --no-pub
+        continue-on-error: true
+
+      # Tạo ios/ nếu chưa có (repo thiếu platform folder)
+      - name: Generate iOS platform files if missing
+        run: |
+          if [ ! -f ios/Podfile ]; then
+            flutter create --platforms=ios .
+          fi
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: ios/Pods
+          key: pods-${{ runner.os }}-${{ hashFiles('**/Podfile.lock') }}
+          restore-keys: |
+            pods-${{ runner.os }}-
+
+      - name: CocoaPods install
+        working-directory: ios
+        run: pod install --repo-update
+
+      # Unsigned build — KHÔNG cài được lên iPhone không có signing
+      - name: Flutter build iOS (no codesign)
+        run: |
+          flutter build ios --release --no-codesign 2>&1 | tee build_ios.log
+
+      - name: Package unsigned .app into zip
+        run: |
+          mkdir -p output/Payload
+          cp -R build/ios/iphoneos/Runner.app output/Payload/Runner.app
+          cd output && zip -qr ../SpacedRep_unsigned.ipa Payload
+
+      - name: Upload build log
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-build-log
+          path: build_ios.log
+          retention-days: 7
+
+      - name: Upload unsigned IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpacedRep-iOS-unsigned
+          path: SpacedRep_unsigned.ipa
+          retention-days: 14
+
+      - name: Fallback xcodebuild no-sign archive
+        if: failure()
+        run: |
+          xcodebuild archive \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -archivePath build/SpacedRep.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            -allowProvisioningUpdates 2>&1 | tee build_xcode_fallback.log || true
+
+      - name: Upload fallback xcarchive
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: SpacedRep-xcarchive-fallback
+          path: build/SpacedRep.xcarchive
+          retention-days: 7
