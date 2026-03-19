@@ -33,9 +33,12 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      # Analyze — info only, never block build
       - name: Flutter analyze
         run: flutter analyze --no-pub || true
+
+      # Generate app icons từ assets/icon/app_icon.png
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons || true
 
       - name: Cache CocoaPods
         uses: actions/cache@v4
@@ -45,16 +48,14 @@ jobs:
           restore-keys: |
             pods-${{ runner.os }}-
 
-      # CocoaPods — chỉ chạy nếu có Podfile
       - name: CocoaPods install
         run: |
           if [ -f ios/Podfile ]; then
-            cd ios && pod install --repo-update
+            cd ios && pod install --repo-update || true
           else
-            echo "No Podfile found, skipping pod install"
+            echo "No Podfile — flutter build ios will handle dependencies"
           fi
 
-      # Unsigned build
       - name: Flutter build iOS (no codesign)
         run: |
           flutter build ios --release --no-codesign 2>&1 | tee build_ios.log
@@ -64,6 +65,7 @@ jobs:
           mkdir -p output/Payload
           cp -R build/ios/iphoneos/Runner.app output/Payload/Runner.app
           cd output && zip -qr ../SpacedRep_unsigned.ipa Payload
+          echo "Packaged: SpacedRep_unsigned.ipa"
 
       - name: Upload build log
         uses: actions/upload-artifact@v4
